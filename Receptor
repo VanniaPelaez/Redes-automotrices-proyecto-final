@@ -1,0 +1,77 @@
+//Receptor
+#include <SPI.h>   
+#include <mcp2515.h>  
+
+// Variables para sensores  
+float sensorLM = 0;         // Variable para almacenar el valor del LM35  
+uint16_t temperatura = 0;   // Temperatura escalada para transmisión  
+uint16_t distancia = 0;     // Distancia medida por HC-SR04  
+uint16_t luz = 0;           // Nivel de luz leído por la fotoresistencia  
+
+// Pines del sensor ultrasónico  
+#define TRIG_PIN 7  
+#define ECHO_PIN 6  
+
+// Estructura para el mensaje CAN  
+struct can_frame canMsg;  
+
+// Configuración del controlador MCP2515 (CS conectado al pin 10)  
+MCP2515 canController(10);  
+
+void setup() {  
+  Serial.begin(9600);           // Inicializar comunicación serie  
+  SPI.begin();                  // Inicializar SPI  
+  canController.reset();        // Reiniciar el MCP2515  
+  canController.setBitrate(CAN_100KBPS, MCP_8MHZ); // Configurar velocidad del bus CAN  
+  canController.setNormalMode(); // Configurar modo normal  
+
+  // Configuración del mensaje CAN  
+  canMsg.can_id = 0x5A4;       // ID del mensaje (debe ser único en la red)  
+  canMsg.can_dlc = 6;          // Longitud del mensaje (6 bytes)  
+
+  // Configuración del ultrasónico  
+  pinMode(TRIG_PIN, OUTPUT);  
+  pinMode(ECHO_PIN, INPUT);  
+}  
+
+void loop() {  
+  // Leer y calcular temperatura del LM35  
+  int temp = analogRead(A0);  
+  sensorLM = (temp * 5.0 / 1023.0) / 0.01; // Conversión del sensor a temperatura  
+  temperatura = uint16_t(sensorLM * 10);   // Escalar la temperatura (1 decimal)  
+
+  // Leer distancia del sensor ultrasónico  
+  digitalWrite(TRIG_PIN, LOW);  
+  delayMicroseconds(2);  
+  digitalWrite(TRIG_PIN, HIGH);  
+  delayMicroseconds(10);  
+  digitalWrite(TRIG_PIN, LOW);  
+  long duration = pulseIn(ECHO_PIN, HIGH);  
+  distancia = duration * 0.034 / 2; // Conversión a cm  
+
+  // Leer nivel de luz de la fotoresistencia  
+  luz = analogRead(A1); // Cambiamos de sonido a luz  
+
+  // Preparar los datos del mensaje CAN  
+  canMsg.data[0] = (temperatura >> 8) & 0xFF; // Byte alto de temperatura  
+  canMsg.data[1] = temperatura & 0xFF;        // Byte bajo de temperatura  
+  canMsg.data[2] = (distancia >> 8) & 0xFF;   // Byte alto de distancia  
+  canMsg.data[3] = distancia & 0xFF;          // Byte bajo de distancia  
+  canMsg.data[4] = (luz >> 8) & 0xFF;          // Byte alto de luz  
+  canMsg.data[5] = luz & 0xFF;                 // Byte bajo de luz  
+
+  // Enviar el mensaje CAN  
+  if (canController.sendMessage(&canMsg) == MCP2515::ERROR_OK) {  
+    Serial.print("Mensaje enviado: ");  
+    Serial.print("Temp: ");  
+    Serial.print(sensorLM, 1);  
+    Serial.print(" °C, Dist: ");  
+    Serial.print(distancia);  
+    Serial.print(" cm, Luz: ");  
+    Serial.println(luz); // Cambiado a luz  
+  } else {  
+    Serial.println("Error al enviar el mensaje CAN");  
+  }  
+  
+  delay(300); // Retraso entre transmisiones  
+}
