@@ -1,0 +1,98 @@
+// Transmisor
+ 
+#include <SPI.h>  
+#include <mcp_can.h>  
+#include <LiquidCrystal_I2C.h>  
+#include <Wire.h>  
+
+// Configuración del MCP2515 y LCD  
+MCP_CAN CAN(10); // Pin CS  
+LiquidCrystal_I2C lcd(0x3F, 16, 2);  
+
+// Pines analógicos de los botones  
+#define BUTTON_TEMP A0  
+#define BUTTON_DIST A1  
+#define BUTTON_LIGHT A2 // Cambiamos el nombre a BUTTON_LIGHT para reflejar la fotoresistencia  
+
+// Umbrales de detección para botones  
+#define THRESHOLD 500  
+
+// Variables para datos CAN  
+uint16_t temperatura = 0;  
+uint16_t distancia = 0;  
+uint16_t luz = 0; // Cambiamos el nombre a 'luz' para reflejar la lectura de la fotoresistencia  
+
+void setup() {  
+  Serial.begin(9600);  
+
+  // Inicializar LCD  
+  lcd.init();  
+  lcd.backlight();  
+  lcd.clear();  
+  lcd.print("Iniciando...");  
+  delay(1000);  
+
+  // Inicializar CAN  
+  if (CAN.begin(MCP_ANY, CAN_100KBPS, MCP_8MHZ) == CAN_OK) {  
+    lcd.clear();  
+    lcd.print("CAN listo");  
+    Serial.println("CAN inicializado correctamente.");  
+  } else {  
+    lcd.clear();  
+    lcd.print("Error CAN");  
+    Serial.println("Error al inicializar CAN.");  
+    while (1); // Queda atrapado aquí si hay fallo  
+  }  
+
+  CAN.setMode(MCP_NORMAL);  
+  delay(1000);  
+  lcd.clear();  
+}  
+
+void loop() {  
+  // Leer mensajes CAN  
+  if (CAN.checkReceive() == CAN_MSGAVAIL) {  
+    long unsigned int canId = 0;  
+    byte len = 0;  
+    byte buf[8];  
+    CAN.readMsgBuf(&canId, &len, buf);  
+
+    // Filtrar por ID 0x5A4 (datos del transmisor)  
+    if (canId == 0x5A4) {  
+      // Extraer datos de los sensores del mensaje CAN  
+      temperatura = (buf[0] << 8) | buf[1]; // Bytes 0 y 1: Temperatura  
+      distancia = (buf[2] << 8) | buf[3];   // Bytes 2 y 3: Distancia  
+      // sonido = (buf[4] << 8) | buf[5]; // Eliminamos esta línea  
+    }  
+  }  
+
+  // Leer valores de los botones  
+  int buttonTempValue = analogRead(BUTTON_TEMP);  
+  int buttonDistValue = analogRead(BUTTON_DIST);  
+  int buttonLightValue = analogRead(BUTTON_LIGHT); // Leer el valor de la fotoresistencia  
+  
+  // Mostrar datos según el botón presionado  
+  if (buttonTempValue > THRESHOLD) { // Botón de temperatura presionado  
+    lcd.clear();  
+    lcd.setCursor(0, 0);  
+    lcd.print("Temp: ");  
+    lcd.print(temperatura / 10.0, 1); // Mostrar con 1 decimal  
+    lcd.print(" C");  
+    delay(300);  
+  } else if (buttonDistValue > THRESHOLD) { // Botón de distancia presionado  
+    lcd.clear();  
+    lcd.setCursor(0, 0);  
+    lcd.print("Distancia: ");  
+    lcd.setCursor(0, 1);  
+    lcd.print(distancia);  
+    lcd.print(" cm");  
+    delay(300);  
+  } else if (buttonLightValue > THRESHOLD) { // Botón de luz presionado  
+    luz = analogRead(BUTTON_LIGHT); // Leer valor de la fotoresistencia  
+    lcd.clear();  
+    lcd.setCursor(0, 0);  
+    lcd.print("Luz: ");  
+    lcd.print(luz); // Mostrar el valor de la fotoresistencia  
+    delay(300);  
+  }  
+}
